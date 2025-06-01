@@ -1,0 +1,13 @@
+# YouTube 文字提取相關
+youtube-transcript-api>=0.6.0
+google-api-python-client>=2.0.0
+
+# Web 自動化相關
+selenium>=4.0.0
+webdriver-manager>=3.8.0
+
+# 系統和進程管理
+psutil>=5.9.0
+
+# 文字處理和編碼
+requests>=2.25.0 
