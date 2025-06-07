@@ -1,13 +1,10 @@
-# YouTube 文字提取相關
-youtube-transcript-api>=0.6.0
-google-api-python-client>=2.0.0
+# YouTube 文字分析器 - 必要套件
+youtube-transcript-api==0.6.1
+google-api-python-client==2.108.0
+requests==2.31.0
 
-# Web 自動化相關
-selenium>=4.0.0
-webdriver-manager>=3.8.0
+# 剪貼板功能
+pyperclip==1.8.2
 
-# 系統和進程管理
-psutil>=5.9.0
-
-# 文字處理和編碼
-requests>=2.25.0 
+# 可選套件 (用於文字處理增強)
+# regex==2023.10.3 

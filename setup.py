@@ -1,119 +1,136 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-YouTube to AI 系統安裝腳本
+YouTube 文字分析器 - 安裝設置
+簡化版本，專注於文字提取功能
 """
 
-import os
-import sys
 import subprocess
+import sys
+import os
 
 def install_requirements():
     """安裝必要套件"""
-    print("🔧 正在安裝必要套件...")
+    print("🔧 YouTube 文字分析器 - 安裝設置")
+    print("="*50)
+    
+    requirements_file = "requirements.txt"
+    
+    if not os.path.exists(requirements_file):
+        print(f"❌ 找不到 {requirements_file} 檔案")
+        return False
     
     try:
-        subprocess.check_call([
-            sys.executable, "-m", "pip", "install", "-r", "requirements.txt"
-        ])
-        print("✅ 套件安裝完成！")
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"❌ 套件安裝失敗: {e}")
+        print(f"📦 正在安裝套件...")
+        result = subprocess.run([
+            sys.executable, "-m", "pip", "install", "-r", requirements_file
+        ], capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            print("✅ 套件安裝成功！")
+            return True
+        else:
+            print(f"❌ 套件安裝失敗:")
+            print(result.stderr)
+            return False
+            
+    except Exception as e:
+        print(f"❌ 安裝過程中發生錯誤: {e}")
         return False
 
-def create_directories():
-    """創建必要目錄"""
-    print("📁 正在創建目錄...")
+def check_python_version():
+    """檢查 Python 版本"""
+    print("🐍 檢查 Python 版本...")
     
-    directories = ["ai_uploads", "logs"]
+    version = sys.version_info
+    if version.major == 3 and version.minor >= 7:
+        print(f"✅ Python {version.major}.{version.minor}.{version.micro} (支援)")
+        return True
+    else:
+        print(f"❌ Python {version.major}.{version.minor}.{version.micro} (需要 Python 3.7+)")
+        return False
+
+def test_imports():
+    """測試套件導入"""
+    print("🧪 測試套件導入...")
+    
+    test_packages = [
+        ('youtube_transcript_api', 'YouTubeTranscriptApi'),
+        ('googleapiclient.discovery', 'build'),
+        ('requests', 'requests'),
+        ('pyperclip', 'pyperclip')
+    ]
+    
+    success = True
+    for package, module in test_packages:
+        try:
+            __import__(package)
+            print(f"✅ {package}")
+        except ImportError:
+            print(f"❌ {package} - 導入失敗")
+            success = False
+    
+    return success
+
+def create_output_directory():
+    """創建輸出目錄"""
+    print("📁 創建輸出目錄...")
+    
+    directories = ['ai_ready_files']
     
     for directory in directories:
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-            print(f"✅ 創建目錄: {directory}")
-        else:
-            print(f"📁 目錄已存在: {directory}")
-
-def check_chrome():
-    """檢查 Chrome 瀏覽器"""
-    print("🌐 正在檢查 Chrome 瀏覽器...")
-    
-    import platform
-    system = platform.system()
-    
-    chrome_paths = {
-        'Windows': [
-            r'C:\Program Files\Google\Chrome\Application\chrome.exe',
-            r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe'
-        ],
-        'Darwin': [
-            '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-        ],
-        'Linux': [
-            '/usr/bin/google-chrome',
-            '/usr/bin/google-chrome-stable'
-        ]
-    }
-    
-    found_chrome = False
-    for path in chrome_paths.get(system, []):
-        if os.path.exists(path):
-            print(f"✅ 找到 Chrome: {path}")
-            found_chrome = True
-            break
-    
-    if not found_chrome:
-        print("⚠️  未找到 Chrome 瀏覽器，請先安裝 Google Chrome")
-        return False
+        try:
+            os.makedirs(directory, exist_ok=True)
+            print(f"✅ {directory}")
+        except Exception as e:
+            print(f"❌ 創建目錄 {directory} 失敗: {e}")
+            return False
     
     return True
 
-def run_test():
-    """運行快速測試"""
-    print("🧪 是否要運行快速測試？")
-    choice = input("輸入 'y' 運行測試，或按 Enter 跳過: ").strip().lower()
-    
-    if choice in ['y', 'yes']:
-        try:
-            subprocess.run([sys.executable, "quick_test.py"])
-        except Exception as e:
-            print(f"❌ 測試運行失敗: {e}")
-
 def main():
     """主安裝程序"""
-    print("🚀 YouTube to AI 系統安裝程序")
-    print("=" * 50)
+    print("🎥 YouTube 文字分析器 - 安裝程序")
+    print("🎯 專注於 YouTube 文字提取 + 分析 Prompt 生成")
+    print("="*60)
     
-    steps = [
-        ("安裝 Python 套件", install_requirements),
-        ("創建必要目錄", create_directories),
-        ("檢查 Chrome 瀏覽器", check_chrome)
-    ]
+    # 檢查 Python 版本
+    if not check_python_version():
+        print("\n❌ Python 版本不符合要求")
+        input("按 Enter 鍵退出...")
+        return
     
-    all_success = True
+    # 安裝套件
+    if not install_requirements():
+        print("\n❌ 套件安裝失敗")
+        input("按 Enter 鍵退出...")
+        return
     
-    for step_name, step_func in steps:
-        print(f"\n📋 步驟: {step_name}")
-        if not step_func():
-            all_success = False
-            print(f"❌ {step_name} 失敗")
-        else:
-            print(f"✅ {step_name} 完成")
+    # 測試導入
+    if not test_imports():
+        print("\n❌ 套件測試失敗")
+        input("按 Enter 鍵退出...")
+        return
     
-    print("\n" + "=" * 50)
+    # 創建目錄
+    if not create_output_directory():
+        print("\n❌ 目錄創建失敗")
+        input("按 Enter 鍵退出...")
+        return
     
-    if all_success:
-        print("🎉 安裝完成！")
-        print("\n📚 使用說明:")
-        print("1. 運行主程序: python youtube_text_2_AI.py")
-        print("2. 快速測試: python quick_test.py")
-        print("3. 查看說明: 參考 README.md")
-        
-        run_test()
-    else:
-        print("⚠️  安裝過程中發生問題，請檢查錯誤信息")
-        print("💡 可以嘗試手動安裝: pip install -r requirements.txt")
+    # 完成
+    print("\n🎉 安裝完成！")
+    print("="*40)
+    print("📋 下一步:")
+    print("1. 運行: python youtube_text_analyzer.py")
+    print("2. 輸入 YouTube 影片 URL")
+    print("3. 選擇分析類型")
+    print("4. 獲得 AI 分析檔案")
+    print()
+    print("💡 檔案會保存在 ai_ready_files 資料夾中")
+    print("   您可以直接複製內容到 AI 網站使用")
+    
+    input("\n按 Enter 鍵退出...")
 
 if __name__ == "__main__":
     main() 
