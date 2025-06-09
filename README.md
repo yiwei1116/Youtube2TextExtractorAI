@@ -229,32 +229,132 @@ v2.0 高速模式：
 ⚡ 緩存效果: 450x 倍提升！
 ```
 
-## 🔧 疑難排解
+## 🔧 故障排除
 
 ### 常見問題
 
-**Q: 並行處理時出現錯誤？**
-```
-A: 降低並行數量：--workers 2，或檢查網路連接穩定性
+#### 1. 字幕提取失敗
+如果遇到 "無法提取轉錄內容" 的錯誤，請嘗試以下解決方案：
+
+**使用診斷工具：**
+```bash
+python debug_transcript.py
 ```
 
-**Q: 緩存佔用太多記憶體？**
-```
-A: 使用 --clear-cache 清除，或重啟程序自動清理
-```
-
-**Q: 處理速度仍然很慢？**
-```
-A: 檢查 YouTube API 限制，考慮稍後重試
+**測試特定影片：**
+```bash
+python test_specific_video.py
 ```
 
-## 📞 支援
+**常見原因及解決方案：**
 
-如有問題，請檢查：
-1. Python 版本是否符合要求（≥3.7）
-2. 網路連接是否穩定  
-3. YouTube 影片是否有字幕
-4. 依賴套件是否正確安裝
+1. **影片沒有字幕**
+   - 確認影片在 YouTube 上確實有字幕
+   - 嘗試手動在 YouTube 上開啟字幕確認
+
+2. **網絡連接問題**
+   - 檢查網絡連接
+   - 嘗試使用 VPN（某些地區可能有限制）
+
+3. **影片訪問限制**
+   - 確認影片為公開影片
+   - 私人影片或被限制的影片無法提取字幕
+
+4. **YouTube API 限制**
+   - 稍後重試（可能是暫時性問題）
+   - 避免過於頻繁的請求
+
+#### 2. 程式改進特性
+
+**增強的字幕提取方法：**
+- 自動重試機制
+- 多種備用提取方法
+- 詳細的錯誤診斷
+- 翻譯功能支持
+
+**新增調試工具：**
+- `diagnose_video_transcript_issues()` - 詳細診斷特定影片
+- `extract_transcript_with_detailed_debug()` - 詳細調試版本的提取方法
+- `print_diagnosis_report()` - 打印格式化的診斷報告
+
+#### 3. 使用診斷功能
+
+**在程式中使用診斷功能：**
+```python
+from youtube_text_extractor import YouTubeTextExtractor
+
+extractor = YouTubeTextExtractor()
+video_id = "your_video_id"
+
+# 執行診斷
+diagnosis = extractor.diagnose_video_transcript_issues(video_id)
+
+# 打印報告
+extractor.print_diagnosis_report(diagnosis)
+
+# 檢查是否有可用字幕
+successful_transcripts = [t for t in diagnosis['transcript_fetch_results'] if t['fetch_successful']]
+if successful_transcripts:
+    print("找到可用字幕!")
+else:
+    print("沒有可用字幕")
+```
+
+#### 4. 手動測試步驟
+
+如果自動方法失敗，可以手動測試：
+
+1. **檢查影片可訪問性**
+   ```bash
+   curl -I "https://www.youtube.com/watch?v=VIDEO_ID"
+   ```
+
+2. **檢查 youtube-transcript-api 版本**
+   ```bash
+   pip show youtube-transcript-api
+   ```
+
+3. **更新套件**
+   ```bash
+   pip install --upgrade youtube-transcript-api
+   ```
+
+#### 5. 日誌和調試
+
+**啟用詳細日誌：**
+```python
+import logging
+logging.basicConfig(level=logging.DEBUG)
+```
+
+**檢查特定錯誤類型：**
+- `TranscriptsDisabled` - 字幕被禁用
+- `NoTranscriptFound` - 找不到字幕
+- `VideoUnavailable` - 影片不可用
+- `TooManyRequests` - 請求過於頻繁
+
+### 支援的影片類型
+
+✅ **支援：**
+- 公開 YouTube 影片
+- 有自動生成字幕的影片
+- 有手動上傳字幕的影片
+- 支持多語言字幕的影片
+
+❌ **不支援：**
+- 私人影片
+- 未列出的影片（某些情況下）
+- 沒有字幕的影片
+- 被地區限制的影片
+
+### 獲得幫助
+
+如果問題仍然存在，請：
+
+1. 運行診斷工具並記錄輸出
+2. 檢查影片是否在瀏覽器中可正常播放
+3. 嘗試不同的影片進行測試
+4. 檢查網絡連接和防火牆設置
 
 ---
 

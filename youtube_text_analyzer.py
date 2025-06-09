@@ -165,10 +165,29 @@ class YouTubeTextAnalyzer:
             # 快速檢查（簡化版本）
             print("🔍 檢查影片...")
             
-            # 直接提取文字稿（移除預檢查以加速）
+            # 直接提取文字稿（使用增強版本）
+            print("📥 提取影片文字稿...")
             transcript = self.extractor.extract_transcript(video_id)
+            
+            # 如果標準方法失敗，嘗試詳細調試方法
+            if not transcript:
+                print("⚠️ 標準方法失敗，嘗試詳細調試方法...")
+                transcript = self.extractor.extract_transcript_with_detailed_debug(video_id)
+            
+            # 如果還是失敗，嘗試備用方法
+            if not transcript:
+                print("⚠️ 詳細調試方法失敗，嘗試備用方法...")
+                transcript = self.extractor.extract_transcript_alternative(video_id)
+            
             if not transcript:
                 print("❌ 無法提取影片文字稿")
+                # 提供診斷信息
+                print("🔍 執行診斷以獲取更多信息...")
+                diagnosis = self.extractor.diagnose_video_transcript_issues(video_id)
+                if diagnosis['recommended_actions']:
+                    print("💡 建議操作:")
+                    for action in diagnosis['recommended_actions'][:3]:
+                        print(f"  • {action}")
                 return None
             
             # 清理文字

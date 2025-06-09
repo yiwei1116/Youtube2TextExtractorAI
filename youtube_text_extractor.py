@@ -9,6 +9,7 @@ import re
 import os
 import json
 import logging
+import time
 from typing import List, Dict, Optional, Tuple
 from urllib.parse import urlparse, parse_qs
 import requests
@@ -148,8 +149,9 @@ class YouTubeTextExtractor:
         Returns:
             轉錄內容或 None
         """
+        # 改進默認語言代碼列表，基於實際測試結果優化順序
         if language_codes is None:
-            language_codes = ['zh-TW', 'zh-CN', 'zh', 'en']
+            language_codes = ['zh', 'zh-TW', 'zh-CN', 'zh-Hans', 'zh-Hant', 'en', 'en-US']
         
         logger.info(f"快速提取影片轉錄: {video_id}")
         
@@ -162,11 +164,11 @@ class YouTubeTextExtractor:
             except Exception as e:
                 logger.debug(f"預設方式失敗: {e}")
             
-            # 方法2: 嘗試指定語言的字幕
+            # 方法2: 嘗試指定語言的字幕（改進后的顺序）
             for lang_code in language_codes:
                 try:
                     transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=[lang_code])
-                    logger.info(f"快速獲取 {lang_code} 字幕成功，共 {len(transcript)} 個片段")
+                    logger.info(f"獲取 {lang_code} 字幕成功，共 {len(transcript)} 個片段")
                     return transcript
                 except Exception as e:
                     logger.debug(f"語言 {lang_code} 失敗: {e}")
@@ -190,6 +192,13 @@ class YouTubeTextExtractor:
             logger.error(f"主要提取方法失敗: {e}")
         
         logger.info("主要方法失敗，嘗試備用方法")
+        
+        # 首先嘗試詳細調試版本
+        result = self.extract_transcript_with_detailed_debug(video_id, language_codes)
+        if result:
+            return result
+        
+        # 如果詳細調試版本也失敗，嘗試原備用方法
         return self.extract_transcript_alternative(video_id)
     
     def extract_transcript_alternative(self, video_id: str) -> Optional[List[Dict]]:
@@ -200,38 +209,49 @@ class YouTubeTextExtractor:
         logger.info(f"使用備用方法提取字幕: {video_id}")
         
         try:
-            # 備用方法1: 列舉所有字幕並嘗試
+            # 備用方法1: 列舉所有字幕並嘗試（改进后的逻辑）
             try:
                 transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-                logger.info(f"找到 {len(list(transcript_list))} 個字幕選項")
                 
-                # 重新獲取列表（因為上面的 len() 已經消耗了迭代器）
-                transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+                # 先收集所有可用字幕信息
+                available_transcripts = []
+                for transcript_info in transcript_list:
+                    available_transcripts.append(transcript_info)
+                
+                logger.info(f"找到 {len(available_transcripts)} 個字幕選項")
+                
+                # 优先顺序：中文相关 > 英文 > 其他
+                def get_priority(transcript_info):
+                    lang_code = transcript_info.language_code.lower()
+                    if 'zh' in lang_code or 'chinese' in transcript_info.language.lower():
+                        return 0  # 最高优先级
+                    elif 'en' in lang_code or 'english' in transcript_info.language.lower():
+                        return 1  # 次优先级
+                    else:
+                        return 2  # 最低优先级
+                
+                # 按优先级排序
+                available_transcripts.sort(key=get_priority)
                 
                 # 嘗試每個可用的字幕
-                for transcript_info in transcript_list:
+                for transcript_info in available_transcripts:
                     try:
                         logger.info(f"嘗試獲取: {transcript_info.language} ({transcript_info.language_code})")
                         
-                        # 如果是英文，嘗試翻譯為中文
-                        if 'en' in transcript_info.language_code.lower():
-                            # 先嘗試翻譯
+                        # 增加重試機制
+                        for retry in range(3):
                             try:
-                                translated = transcript_info.translate('zh')
-                                transcript_data = translated.fetch()
-                                logger.info(f"成功獲取翻譯字幕（中文），共 {len(transcript_data)} 個片段")
-                                return transcript_data
-                            except Exception as e:
-                                logger.debug(f"翻譯為中文失敗: {e}")
-                                # 翻譯失敗就使用原始英文
+                                # 直接尝试获取字幕，不做复杂的翻译逻辑
                                 transcript_data = transcript_info.fetch()
-                                logger.info(f"成功獲取原始英文字幕，共 {len(transcript_data)} 個片段")
+                                logger.info(f"成功獲取 {transcript_info.language} 字幕，共 {len(transcript_data)} 個片段")
                                 return transcript_data
-                        else:
-                            # 非英文字幕直接使用
-                            transcript_data = transcript_info.fetch()
-                            logger.info(f"成功獲取 {transcript_info.language} 字幕，共 {len(transcript_data)} 個片段")
-                            return transcript_data
+                            except Exception as retry_e:
+                                if retry < 2:  # 還有重試機會
+                                    logger.debug(f"重試 {retry + 1}/3: {retry_e}")
+                                    time.sleep(1)  # 等待1秒後重試
+                                    continue
+                                else:
+                                    raise retry_e
                             
                     except Exception as e:
                         logger.debug(f"獲取 {transcript_info.language} ({transcript_info.language_code}) 失敗: {e}")
@@ -240,24 +260,135 @@ class YouTubeTextExtractor:
             except Exception as e:
                 logger.error(f"列舉字幕失敗: {e}")
             
-            # 備用方法2: 嘗試常見語言代碼
-            common_languages = ['en', 'en-US', 'en-GB', 'zh', 'zh-TW', 'zh-CN']
+            # 備用方法2: 嘗試常見語言代碼（改进后的列表）
+            common_languages = ['zh', 'zh-Hans', 'zh-Hant', 'zh-CN', 'zh-TW', 'en', 'en-US', 'en-GB']
             logger.info("嘗試常見語言代碼")
             
             for lang in common_languages:
                 try:
-                    transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=[lang])
-                    logger.info(f"使用語言代碼 {lang} 成功，共 {len(transcript)} 個片段")
-                    return transcript
+                    # 增加重試機制
+                    for retry in range(2):
+                        try:
+                            transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=[lang])
+                            logger.info(f"使用語言代碼 {lang} 成功，共 {len(transcript)} 個片段")
+                            return transcript
+                        except Exception as retry_e:
+                            if retry < 1:  # 還有重試機會
+                                logger.debug(f"語言代碼 {lang} 重試 {retry + 1}/2: {retry_e}")
+                                time.sleep(0.5)
+                                continue
+                            else:
+                                raise retry_e
                 except Exception as e:
                     logger.debug(f"語言代碼 {lang} 失敗: {e}")
                     continue
+            
+            # 備用方法3: 嘗試獲取任何可用的字幕（不指定語言）
+            logger.info("嘗試獲取任何可用字幕")
+            try:
+                transcript = YouTubeTranscriptApi.get_transcript(video_id)
+                logger.info(f"獲取任意字幕成功，共 {len(transcript)} 個片段")
+                return transcript
+            except Exception as e:
+                logger.debug(f"獲取任意字幕失敗: {e}")
+            
+            # 備用方法4: 使用翻譯功能（如果原始字幕不可用）
+            logger.info("嘗試使用翻譯功能")
+            try:
+                transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+                for transcript_info in transcript_list:
+                    try:
+                        # 如果字幕支持翻譯
+                        if hasattr(transcript_info, 'is_translatable') and transcript_info.is_translatable:
+                            logger.info(f"嘗試翻譯 {transcript_info.language} 到英文")
+                            translated = transcript_info.translate('en')
+                            transcript_data = translated.fetch()
+                            logger.info(f"翻譯成功，共 {len(transcript_data)} 個片段")
+                            return transcript_data
+                    except Exception as e:
+                        logger.debug(f"翻譯 {transcript_info.language} 失敗: {e}")
+                        continue
+            except Exception as e:
+                logger.debug(f"翻譯方法失敗: {e}")
             
             logger.error("所有備用方法都失敗")
             return None
             
         except Exception as e:
             logger.error(f"備用字幕提取方法發生錯誤: {e}")
+            return None
+    
+    def extract_transcript_with_detailed_debug(self, video_id: str, language_codes: List[str] = None) -> Optional[List[Dict]]:
+        """
+        詳細調試版本的字幕提取方法
+        提供更多診斷資訊來幫助調試問題
+        """
+        if language_codes is None:
+            language_codes = ['zh', 'zh-TW', 'zh-CN', 'zh-Hans', 'zh-Hant', 'en', 'en-US']
+        
+        logger.info(f"詳細調試模式提取字幕: {video_id}")
+        
+        try:
+            # 第一步：檢查字幕列表
+            logger.info("檢查可用字幕列表...")
+            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+            
+            available_info = []
+            for transcript in transcript_list:
+                info = {
+                    'language': transcript.language,
+                    'language_code': transcript.language_code,
+                    'is_generated': getattr(transcript, 'is_generated', 'unknown'),
+                    'is_translatable': getattr(transcript, 'is_translatable', 'unknown')
+                }
+                available_info.append(info)
+                logger.info(f"可用字幕: {info}")
+            
+            # 第二步：按照優先順序嘗試
+            logger.info("開始按優先順序嘗試...")
+            
+            # 優先嘗試中文字幕
+            chinese_codes = ['zh', 'zh-TW', 'zh-CN', 'zh-Hans', 'zh-Hant']
+            for lang_code in chinese_codes:
+                for transcript in transcript_list:
+                    if transcript.language_code.lower() == lang_code.lower():
+                        try:
+                            logger.info(f"嘗試中文字幕: {transcript.language} ({transcript.language_code})")
+                            data = transcript.fetch()
+                            logger.info(f"中文字幕獲取成功，共 {len(data)} 個片段")
+                            return data
+                        except Exception as e:
+                            logger.warning(f"中文字幕 {lang_code} 獲取失敗: {e}")
+            
+            # 然後嘗試英文字幕
+            english_codes = ['en', 'en-US', 'en-GB']
+            for lang_code in english_codes:
+                for transcript in transcript_list:
+                    if transcript.language_code.lower() == lang_code.lower():
+                        try:
+                            logger.info(f"嘗試英文字幕: {transcript.language} ({transcript.language_code})")
+                            data = transcript.fetch()
+                            logger.info(f"英文字幕獲取成功，共 {len(data)} 個片段")
+                            return data
+                        except Exception as e:
+                            logger.warning(f"英文字幕 {lang_code} 獲取失敗: {e}")
+            
+            # 最後嘗試任何可用的字幕
+            logger.info("嘗試任何可用的字幕...")
+            for transcript in transcript_list:
+                try:
+                    logger.info(f"嘗試: {transcript.language} ({transcript.language_code})")
+                    data = transcript.fetch()
+                    logger.info(f"字幕獲取成功，共 {len(data)} 個片段")
+                    return data
+                except Exception as e:
+                    logger.warning(f"字幕 {transcript.language_code} 獲取失敗: {e}")
+            
+            logger.error("所有字幕獲取都失敗")
+            return None
+            
+        except Exception as e:
+            logger.error(f"詳細調試提取失敗: {e}")
             return None
     
     def clean_text(self, transcript: List[Dict], remove_timestamps: bool = True) -> str:
@@ -978,7 +1109,7 @@ class YouTubeTextExtractor:
             },
             'analysis': {
             'name': '🔍 深度專業分析',
-            'description': '利用Grok3的分析能力，對YouTube影片文字稿進行全面的專業分析，包括識別主要論點、評估論證邏輯、檢視事實準確性，並提供多角度的對比和見解。',
+            'description': '利用你的分析能力，對YouTube影片文字稿進行全面的專業分析，包括識別主要論點、評估論證邏輯、檢視事實準確性，並提供多角度的對比和見解。',
             'suitable_for': 'YouTube影片內容分析、批判性思考、專業評估',
             'output_focus': '論證結構、邏輯評估、事實核查、多角度見解'
             },
@@ -1221,6 +1352,137 @@ class YouTubeTextExtractor:
             text = str(item)
         
         return text.strip() if text else ""
+    
+    def diagnose_video_transcript_issues(self, video_id: str) -> Dict:
+        """
+        診斷特定影片的字幕提取問題
+        提供詳細的診斷資訊來幫助troubleshooting
+        
+        Args:
+            video_id: YouTube 影片 ID
+            
+        Returns:
+            診斷結果字典
+        """
+        diagnosis = {
+            'video_id': video_id,
+            'video_accessible': False,
+            'transcript_list_accessible': False,
+            'available_transcripts': [],
+            'transcript_fetch_results': [],
+            'recommended_actions': []
+        }
+        
+        logger.info(f"開始診斷影片字幕問題: {video_id}")
+        
+        try:
+            # 1. 檢查影片是否可訪問
+            try:
+                test_url = f"https://www.youtube.com/watch?v={video_id}"
+                response = requests.head(test_url, timeout=10)
+                diagnosis['video_accessible'] = response.status_code == 200
+                logger.info(f"影片訪問狀態: {response.status_code}")
+            except Exception as e:
+                logger.warning(f"無法檢查影片訪問狀態: {e}")
+                diagnosis['recommended_actions'].append("檢查網絡連接")
+            
+            # 2. 檢查字幕列表是否可獲取
+            try:
+                transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+                diagnosis['transcript_list_accessible'] = True
+                
+                # 3. 詳細分析每個可用的字幕
+                for transcript in transcript_list:
+                    transcript_info = {
+                        'language': transcript.language,
+                        'language_code': transcript.language_code,
+                        'is_generated': getattr(transcript, 'is_generated', 'unknown'),
+                        'is_translatable': getattr(transcript, 'is_translatable', 'unknown'),
+                        'fetch_successful': False,
+                        'fetch_error': None,
+                        'data_length': 0
+                    }
+                    
+                    # 嘗試獲取這個字幕
+                    try:
+                        data = transcript.fetch()
+                        transcript_info['fetch_successful'] = True
+                        transcript_info['data_length'] = len(data)
+                        logger.info(f"字幕 {transcript.language} 獲取成功，長度: {len(data)}")
+                    except Exception as e:
+                        transcript_info['fetch_error'] = str(e)
+                        logger.warning(f"字幕 {transcript.language} 獲取失敗: {e}")
+                    
+                    diagnosis['available_transcripts'].append(transcript_info)
+                    diagnosis['transcript_fetch_results'].append(transcript_info)
+                
+            except Exception as e:
+                logger.error(f"無法獲取字幕列表: {e}")
+                diagnosis['transcript_list_accessible'] = False
+                diagnosis['recommended_actions'].append(f"字幕列表獲取失敗: {e}")
+            
+            # 4. 生成建議
+            successful_transcripts = [t for t in diagnosis['transcript_fetch_results'] if t['fetch_successful']]
+            
+            if not diagnosis['transcript_list_accessible']:
+                diagnosis['recommended_actions'].append("影片可能被設為私人或已刪除")
+                diagnosis['recommended_actions'].append("檢查影片 ID 是否正確")
+            elif len(successful_transcripts) == 0:
+                diagnosis['recommended_actions'].append("所有字幕都無法獲取")
+                diagnosis['recommended_actions'].append("可能是 YouTube API 限制或臨時問題")
+                diagnosis['recommended_actions'].append("稍後重試或檢查網絡連接")
+            else:
+                best_transcript = max(successful_transcripts, key=lambda x: x['data_length'])
+                diagnosis['recommended_actions'].append(f"建議使用: {best_transcript['language']} ({best_transcript['language_code']})")
+            
+            # 5. 檢查常見問題
+            if diagnosis['video_accessible'] and not diagnosis['transcript_list_accessible']:
+                diagnosis['recommended_actions'].append("影片存在但字幕不可用 - 可能沒有字幕或被限制")
+            
+            if len(diagnosis['available_transcripts']) > 0 and len(successful_transcripts) == 0:
+                diagnosis['recommended_actions'].append("字幕存在但無法獲取 - 可能是權限問題")
+                
+        except Exception as e:
+            logger.error(f"診斷過程中發生錯誤: {e}")
+            diagnosis['recommended_actions'].append(f"診斷失敗: {e}")
+        
+        return diagnosis
+    
+    def print_diagnosis_report(self, diagnosis: Dict):
+        """
+        打印診斷報告
+        
+        Args:
+            diagnosis: 診斷結果字典
+        """
+        print("\n" + "=" * 60)
+        print(f"🔍 YouTube 字幕診斷報告")
+        print("=" * 60)
+        print(f"影片 ID: {diagnosis['video_id']}")
+        print(f"影片可訪問: {'✅' if diagnosis['video_accessible'] else '❌'}")
+        print(f"字幕列表可訪問: {'✅' if diagnosis['transcript_list_accessible'] else '❌'}")
+        
+        if diagnosis['available_transcripts']:
+            print(f"\n📋 可用字幕 ({len(diagnosis['available_transcripts'])} 個):")
+            for i, transcript in enumerate(diagnosis['available_transcripts'], 1):
+                status = '✅' if transcript['fetch_successful'] else '❌'
+                print(f"  {i}. {status} {transcript['language']} ({transcript['language_code']})")
+                if transcript['fetch_successful']:
+                    print(f"     📝 長度: {transcript['data_length']} 個片段")
+                else:
+                    print(f"     ❌ 錯誤: {transcript['fetch_error']}")
+                    
+                print(f"     🤖 自動生成: {transcript['is_generated']}")
+                print(f"     🌐 可翻譯: {transcript['is_translatable']}")
+        else:
+            print("\n❌ 沒有找到可用字幕")
+        
+        if diagnosis['recommended_actions']:
+            print(f"\n💡 建議操作:")
+            for i, action in enumerate(diagnosis['recommended_actions'], 1):
+                print(f"  {i}. {action}")
+        
+        print("=" * 60)
 
 def main():
     """主程序示例"""
